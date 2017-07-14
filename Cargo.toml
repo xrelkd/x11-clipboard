@@ -13,4 +13,4 @@ travis-ci = { repository = "quininer/x11-clipboard" }
 
 [dependencies]
 error-chain = "0.10"
-xcb = { version = "0.8", features = [ "thread" ] }
+x11 = "*"
