@@ -9,6 +9,9 @@ error_chain!{
         XConnection {
             description("X Connection Error")
         }
+        BadTarget {
+            description("Bad Target")
+        }
     }
 }
 
