@@ -5,12 +5,12 @@ extern crate x11;
 mod connection;
 mod context;
 
-use std::{ cmp, ptr, mem, slice, thread };
+use std::{ cmp, mem, slice, thread };
 use std::time::{ Duration, Instant };
 use std::sync::{ Arc, RwLock };
 use std::sync::mpsc::{ Sender, channel };
 use std::collections::HashMap;
-use x11::xlib::{ self, Atom, Window };
+use x11::xlib::{ self, Atom };
 use connection::UnsafeConnection;
 pub use connection::{ Atoms, Connection };
 
@@ -39,17 +39,20 @@ impl Clipboard {
         let max = unsafe { xlib::XMaxRequestSize(setter.display) as _ };
         let max = (cmp::max(65536, max) << 2) - 100;
 
-        thread::spawn(move || context::run(setter2, setmap2, max, &receiver));
+        thread::spawn(move || context::run(setter2, setmap2, max, receiver));
 
         Ok(Clipboard { getter, setter, setmap, sender })
     }
 
-    pub fn load<T>(&self, selection: Atom, target: Atom, property: Atom, _timeout: T)
+    pub fn load<T>(&self, selection: Atom, target: Atom, property: Atom, timeout: T)
         -> error::Result<Vec<u8>>
         where T: Into<Option<Duration>>
     {
         let mut buf = Vec::new();
         let mut is_incr = false;
+        let timeout = timeout.into();
+        let start_time = timeout.as_ref()
+            .map(|_| Instant::now());
 
         unsafe {
             xlib::XConvertSelection(
@@ -65,6 +68,15 @@ impl Clipboard {
         }
 
         loop {
+            if timeout.iter()
+                .zip(&start_time)
+                .next()
+                .map(|(&timeout, &time)| (Instant::now() - time) >= timeout)
+                .unwrap_or(false)
+            {
+                return Err(err!(Timeout));
+            }
+
             unsafe {
                 let mut event = mem::uninitialized();
 
@@ -151,10 +163,55 @@ impl Clipboard {
 
         Ok(buf)
     }
+
+    pub fn store<T>(&self, selection: Atom, target: Atom, value: T)
+        -> error::Result<()>
+        where T: Into<Vec<u8>>
+    {
+        self.sender.send(selection)?;
+        self.setmap
+            .write()
+            .map_err(|_| err!(Lock))?
+            .insert(selection, (target, value.into()));
+
+        let owner = unsafe {
+            xlib::XSetSelectionOwner(
+                self.setter.display, selection,
+                self.setter.window, xlib::CurrentTime
+            );
+
+            xlib::XGetSelectionOwner(self.setter.display, selection)
+        };
+
+        if owner == self.setter.window {
+            Ok(())
+        } else {
+            Err(err!(BadOwner))
+        }
+    }
 }
 
 
 #[test]
 fn it_work() {
-    Connection::new(None).unwrap();
+    let data = format!("{:?}", Instant::now());
+    let clipboard = Clipboard::new().unwrap();
+
+    let atom_clipboard = clipboard.setter.atoms.clipboard;
+    let atom_utf8string = clipboard.setter.atoms.utf8_string;
+    let atom_property = clipboard.setter.atoms.property;
+
+    clipboard.store(atom_clipboard, atom_utf8string, data.as_bytes()).unwrap();
+
+    let output = clipboard.load(atom_clipboard, atom_utf8string, atom_property, None).unwrap();
+    assert_eq!(output, data.as_bytes());
+
+    let data = format!("{:?}", Instant::now());
+    clipboard.store(atom_clipboard, atom_utf8string, data.as_bytes()).unwrap();
+
+    let output = clipboard.load(atom_clipboard, atom_utf8string, atom_property, None).unwrap();
+    assert_eq!(output, data.as_bytes());
+
+    let output = clipboard.load(atom_clipboard, atom_utf8string, atom_property, None).unwrap();
+    assert_eq!(output, data.as_bytes());
 }
