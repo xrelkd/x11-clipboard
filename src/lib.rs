@@ -64,9 +64,10 @@ impl Clipboard {
             xlib::XSync(self.getter.display, xlib::False);
         }
 
-        let mut event = unsafe { mem::uninitialized() };
         loop {
             unsafe {
+                let mut event = mem::uninitialized();
+
                 if xlib::XPending(self.getter.display) > 0 {
                     xlib::XNextEvent(self.getter.display, &mut event);
                 } else {
@@ -91,14 +92,14 @@ impl Clipboard {
                         );
 
                         if type_ == self.getter.atoms.incr {
-                            debug_assert_eq!(length as usize % mem::size_of::<i32>(), 0);
-                            let length = cmp::min(length as usize / mem::size_of::<i32>(), 1);
-                            if let Some(&size) = slice::from_raw_parts(value as *const i32, length).get(0) {
+                            assert_eq!(format, 32);
+                            if let Some(&size) = slice::from_raw_parts(value as *const i32, 1).get(0) {
                                 buf.reserve(size as usize);
                             }
 
                             xlib::XDeleteProperty(event.display, event.requestor, event.property);
                             xlib::XSync(event.display, xlib::False);
+                            xlib::XFree(value as _);
 
                             is_incr = true;
                             continue
@@ -107,6 +108,7 @@ impl Clipboard {
                         }
 
                         buf.extend_from_slice(slice::from_raw_parts(value as *const u8, length as _));
+                        xlib::XFree(value as _);
                         break
                     },
                     xlib::PropertyNotify if is_incr => {
@@ -132,6 +134,7 @@ impl Clipboard {
 
                         if length != 0 {
                             buf.extend_from_slice(slice::from_raw_parts(value as *const u8, length as _));
+                            xlib::XFree(value as _);
                         } else {
                             break
                         }
