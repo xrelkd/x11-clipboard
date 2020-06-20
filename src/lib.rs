@@ -140,7 +140,7 @@ impl Clipboard {
                     match self.getter.connection.wait_for_event() {
                         Some(event) => event,
                         None => {
-                            continue
+                            return Err(Error::IoError);
                         }
                     }
                 },
@@ -149,7 +149,7 @@ impl Clipboard {
                         Some(event) => event,
                         None => {
                             thread::park_timeout(Duration::from_millis(POLL_DURATION));
-                            continue
+                            continue;
                         }
                     }
                 }

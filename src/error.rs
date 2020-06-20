@@ -14,6 +14,7 @@ pub enum Error {
     Timeout,
     Owner,
     UnexpectedType(Atom),
+    IoError,
 
     #[doc(hidden)]
     __Unknown
@@ -30,6 +31,7 @@ impl fmt::Display for Error {
             Timeout => write!(f, "Selection timed out"),
             Owner => write!(f, "Failed to set new owner of XCB selection"),
             UnexpectedType(target) => write!(f, "Unexpected Reply type: {}", target),
+            IoError => write!(f, "XCB: IO error"),
             __Unknown => unreachable!()
         }
     }
@@ -42,7 +44,7 @@ impl StdError for Error {
             Set(e) => Some(e),
             XcbConn(e) => Some(e),
             XcbGeneric(e) => Some(e),
-            Lock | Timeout | Owner | UnexpectedType(_) => None,
+            Lock | Timeout | Owner | UnexpectedType(_) | IoError => None,
             __Unknown => unreachable!()
         }
     }
